@@ -285,8 +285,17 @@ function Invoke-CaptivePortalAcceptance {
 	$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 	$landing = Invoke-WebRequest -Uri $BaseUrl -Method Get -WebSession $session -UseBasicParsing -TimeoutSec $TimeoutSeconds
 
+	# BaseResponse.ResponseUri exists in Windows PowerShell 5.1 (System.Net.HttpWebResponse).
+	# In PowerShell 7+ it is System.Net.Http.HttpResponseMessage, which exposes the final URI
+	# via RequestMessage.RequestUri instead.
+	$finalUri = if ($landing.BaseResponse.PSObject.Properties.Item('ResponseUri')) {
+		[uri]$landing.BaseResponse.ResponseUri
+	} else {
+		[uri]$landing.BaseResponse.RequestMessage.RequestUri
+	}
+
 	$html = [string]$landing.Content
-	$postUri = Get-AupPostUri -Html $html -BaseUri ([uri]$landing.BaseResponse.ResponseUri)
+	$postUri = Get-AupPostUri -Html $html -BaseUri $finalUri
 	if (-not $postUri) {
 		Write-Log -Level "INFO" -Message "Attempt ${Attempt}: AUP form not found. Device may already be authorized."
 		return $false
@@ -303,7 +312,7 @@ function Invoke-CaptivePortalAcceptance {
 
 	$fields["aupAccepted"] = "true"
 
-	$originUri = [uri]$landing.BaseResponse.ResponseUri
+	$originUri = $finalUri
 	$headers = @{
 		Referer = $originUri.AbsoluteUri
 		Origin  = ("{0}://{1}" -f $originUri.Scheme, $originUri.Authority)
